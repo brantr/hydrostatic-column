@@ -78,10 +78,11 @@ double *hydrostatic_column(double x, double y, double dz, int nz, int ng)
 
   int k;        //index along z axis
   double *rho;  //density array in column
-  double *dPdz; //pressure gradient in column
+  //double *dPdz; //pressure gradient in column
   double *gz;   //vertical acceleration in column
-  double *gr;   //radial acceleration in column
-  double *drho; //change to density
+  //double *gr;   //radial acceleration in column
+  //double *drho; //change to density
+  double drho;  //change to density
 
   double z;     //cell center in z direction
   int nzt;      //total number of cells in z-direction
@@ -90,10 +91,10 @@ double *hydrostatic_column(double x, double y, double dz, int nz, int ng)
   double z_max; //top of the cell
   double r;       //cylindrical radius at xy
   double Sigma_r; //surface density expected at r
-  double P_a, P_b, Delta_z; //pressure gradient computation
+  //double P_a, P_b, Delta_z; //pressure gradient computation
   double gamma = Disk.gamma;
   double K = Disk.K_eos;
-  double rho_floor = 1.0e-2;
+  double rho_floor = 1.0e-2; //density floor
 
   int iter = 0; //number if iterations
   int ks; //start of integrals above disk plane
@@ -126,13 +127,13 @@ double *hydrostatic_column(double x, double y, double dz, int nz, int ng)
   }
 
   //allocate pressure gradient
-  if(!(dPdz=(double *) calloc(nzt,sizeof(double))))
-  {
-    printf("Error allocating dPdz array of size %d.\n",nzt);
-    printf("Aborting...\n");
-    fflush(stdout);
-    exit(-1);
-  }
+  //if(!(dPdz=(double *) calloc(nzt,sizeof(double))))
+  //{
+  //  printf("Error allocating dPdz array of size %d.\n",nzt);
+  //  printf("Aborting...\n");
+  //  fflush(stdout);
+  //  exit(-1);
+  //}
 
   //allocate vertical acceleration 
   if(!(gz=(double *) calloc(nzt,sizeof(double))))
@@ -144,29 +145,21 @@ double *hydrostatic_column(double x, double y, double dz, int nz, int ng)
   }
 
   //allocate radial acceleration 
-  if(!(gr=(double *) calloc(nzt,sizeof(double))))
-  {
-    printf("Error allocating gz array of size %d.\n",nzt);
-    printf("Aborting...\n");
-    fflush(stdout);
-    exit(-1);
-  }
+  //if(!(gr=(double *) calloc(nzt,sizeof(double))))
+  //{
+  //  printf("Error allocating gz array of size %d.\n",nzt);
+  //  printf("Aborting...\n");
+  //  fflush(stdout);
+  //  exit(-1);
+  //}
 
   //allocate density corrections 
-  if(!(drho=(double *) calloc(nzt,sizeof(double))))
-  {
-    printf("Error allocating drho array of size %d.\n",nzt);
-    printf("Aborting...\n");
-    fflush(stdout);
-    exit(-1);
-  }
-
-
-  //check z positions
-  //for(k=0;k<nzt;k++)
+  //if(!(drho=(double *) calloc(nzt,sizeof(double))))
   //{
-  //  z = z_hc(k,dz,nz,ng);
-  //  printf("k %d cl %e cc %e cu %e\n",k-ng,z-0.5*dz,z,z+0.5*dz);
+  //  printf("Error allocating drho array of size %d.\n",nzt);
+  ///  printf("Aborting...\n");
+  //  fflush(stdout);
+  //  exit(-1);
   //}
 
   //compute vertical and radial
@@ -175,11 +168,8 @@ double *hydrostatic_column(double x, double y, double dz, int nz, int ng)
   {
     z     = z_hc(k,dz,nz,ng);
     gz[k] = gz_disk(r,z,Disk);
-    gr[k] = gr_disk(r,z,Disk);
+    //gr[k] = gr_disk(r,z,Disk);
   }
-
-  //set densities
-  //SetGasDensities(rho, gz, r, dz, nz, ng, &Disk);
 
   //set initial guess for disk properties
   //assume the disk is an exponential vertically to start
@@ -210,20 +200,10 @@ double *hydrostatic_column(double x, double y, double dz, int nz, int ng)
   for(k=0;k<nzt;k++)
   {
     rho[k] *= Sigma_r/(Sigma*dz);
-
-    //if(k>=ks)
-    //  printf("%e\t%e\n",z_hc(k,dz,nz,ng),rho[k]);
   }
-  //check
-  //Sigma =0;
-  //for(k=0;k<nzt;k++)
-  //{
-  //  Sigma += rho[k]*dz;
-  //}
-  //printf("Sigma %e Sigma_r %e\n",Sigma,Sigma_r);
 
 
-  //OK, rho is set to an exponential
+  //OK, rho is set initially to an exponential
   //let's adjust to make it hydrostatic
 
   //begin iterative process to set the density
@@ -240,53 +220,41 @@ double *hydrostatic_column(double x, double y, double dz, int nz, int ng)
     {
       Sigma  += rho[k]*dz;
     }
-    //printf("Sigma %e Sigma_r %e\n",Sigma,Sigma_r);
-    //for(k=0;k<nzt;k++)
-    //  rho[k] *= Sigma_r/Sigma;
 
-
-
+    //check for mass conservation
     mass_loss = 0;
     for(k=ks;k<nzt-1;k++)
     {
       //z position
       z     = z_hc(k,dz,nz,ng);
-      drho[k] = -1.*pow(rho[k],2-gamma)*(fabs(gz[k])*dz/(gamma*K));
 
-      //printf("z %e rho %e drho %e\n",z,rho[k],drho[k]);
-      if(drho[k]<-0.9*rho[k])
-        drho[k] = -0.9*rho[k];
-      rho_new = rho[k]+drho[k];
+      //change in density between vertically adjacent
+      //cells that would result in hydrostatic balance
+      drho = -1.*pow(rho[k],2-gamma)*(fabs(gz[k])*dz/(gamma*K));
+
+      //prevent driving the density to zero
+      if(drho<-0.9*rho[k])
+        drho = -0.9*rho[k];
+
+      //set the new density immediately above
+      //this cell
+      rho_new = rho[k]+drho;
+
+      //track any mass we might lose
       mass_loss += (rho[k+1]-rho_new);
+
+      //set the revised density in the cell
+      //immediately above the current one
       rho[k+1] = rho_new;
       if(rho[k+1]<rho_floor)
         rho[k+1] = rho_floor;
 
       //compute grad P
-      P_b = P_eos(rho[k+1],Disk);
-      P_a = P_eos(rho[k],Disk);
-      Delta_z = 1.0*dz;     
-
-      /*
-      if( (k!=0) && (k!=(nzt-1)) )
-      {
-        P_b = P_eos(rho[k+1],Disk);
-        P_a = P_eos(rho[k-1],Disk);
-        Delta_z = 2.0*dz;
-      }else{
-        if(k==0)
-        {
-          P_b = P_eos(rho[k],Disk);
-          P_a = P_eos(rho[k+1],Disk);
-          Delta_z = 1.0*dz;
-        }else{
-          P_b = P_eos(rho[k],Disk);
-          P_a = P_eos(rho[k-1],Disk);
-          Delta_z = 1.0*dz;
-        }
-      }*/
       //based on equation of state
-      dPdz[k] = -1.0*sgn(z)*fabs(P_b-P_a)/Delta_z;
+      //P_b = P_eos(rho[k+1],Disk);
+      //P_a = P_eos(rho[k],Disk);
+      //Delta_z = 1.0*dz;     
+      //dPdz[k] = -1.0*sgn(z)*fabs(P_b-P_a)/Delta_z;
 
 
 
@@ -299,19 +267,24 @@ double *hydrostatic_column(double x, double y, double dz, int nz, int ng)
       //if(z>0)
       //  printf("z %e\trho %e\tdPdz % e\t-rho g % e gz % e drho %e\n",z,rho[k],dPdz[k],-rho[k]*gz[k],gz[k],drho[k]);
     }
+    //set the upper most ghost cell
+    rho[nzt-1] = rho[nzt-2];
+    mass_loss -= rho[nzt-1];
+
     //printf("mass_loss = %e\n",mass_loss*dz/Sigma);
     int km;
     for(k=ks;k<nzt;k++)
     {
+      //spread the lost mass over all the cells
       if(mass_loss<0)
       {
-        //rho[k] *= (1 + fabs(mass_loss)/Sigma);
         rho[k] += mass_loss/((float) (nzt-1-ks+1));
       }else{
         rho[k] -= mass_loss/((float) (nzt-1-ks+1));
-        //rho[k] *= (1 - fabs(mass_loss)/Sigma);
       }
+
       //mirror densities
+      //above and below disk plane
       if(nz%2)
       {
         km = (ng+(nz-1)/2) - (k-ks);
@@ -321,19 +294,13 @@ double *hydrostatic_column(double x, double y, double dz, int nz, int ng)
       rho[km] = rho[k];
     }
 
-
-
-
-
-    // dP/dz + rho g = A
-    // P = K rho^gamma
-    // dP/dz = gamma * K * rho^(gamma-1)  drho/dz
-    // A = rho*g + gamma * K * rho^(gamma-1) drho/dz
-    // A = rho( G + K * rho^(gamma-2) drho/dz)
-
     //printf("*****\n");
     iter++;
     //if(iter>50)
+
+    //stop once we've converged to 0.1% 
+    //of the expected surface density
+    //in this column
     if(fabs(mass_loss*dz)/Sigma<1.0e-3)
       flag=0;
 
@@ -343,9 +310,9 @@ double *hydrostatic_column(double x, double y, double dz, int nz, int ng)
   
 
   //free ancillary arrays
-  free(dPdz);
+  //free(dPdz);
   free(gz);
-  free(gr);
+  //free(gr);
 
   //return the rho array
   return rho;
